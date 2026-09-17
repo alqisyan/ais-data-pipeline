@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: mydatabase
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - aisnet
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin_web
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: adminpassword
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    networks:
+      - aisnet
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      KAFKA_CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    networks:
+      - aisnet
+
+  ais-decoder:
+    build: ./ais-decoder
+    depends_on:
+      - kafka
+    networks:
+      - aisnet
+    environment:
+      - MOCKUP_HOST=ais-mockup
+      - MOCKUP_PORT=8040
+      - KAFKA_BROKER=kafka:29092
+
+  # Feed DB with AIS Data directly if not using API
+  # aisToDb:
+  #   build: ./aisToDb
+  #   depends_on:
+  #     - kafka
+  #   networks:
+  #     - aisnet
+  #   environment:
+  #     - KAFKA_BROKER=kafka:29092
+      
+  fastapi:
+    build: ./fastapi-ais
+    container_name: fastapi
+    ports:
+      - "8000:8000"
+    depends_on:
+      - kafka
+    networks:
+      - aisnet
+
+networks:
+  aisnet:
+    driver: bridge
+
+volumes:
+  pgdata:
